@@ -106,14 +106,14 @@ async def test_local_control_uses_cloud_only_on_failure(
     mock_gizwits_cloud.async_set_mode.assert_awaited_with(4, did="test-did-001")
 
 
-async def test_large_binary_sensor_value_is_in_attributes(
+async def test_internal_program_data_has_no_redundant_raw_entity(
     hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
 ):
     mock_gizwits_cloud.async_get_device_status.return_value = {"attr": {"Auto": "01" * 781}}
     await setup_integration(hass, gyre_config_entry)
     state = hass.states.get("sensor.maxspect_my_gyre_auto_raw")
-    assert state.state == "781 bytes"
-    assert state.attributes["raw_hex"] == "01" * 781
+    assert state is None
+    assert gyre_config_entry.runtime_data.data.generic_attrs["Auto"] == "01" * 781
 
 @pytest.mark.parametrize(('raw', 'seconds'), [
     ('000e37', 895), ('010203', 3723), ('000000', 0),
@@ -128,23 +128,24 @@ async def test_missing_diagnostics_hide_and_reappear_with_report(
     hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
 ):
     from homeassistant.helpers import entity_registry as er
+    mock_gizwits_cloud.async_get_device_status.return_value = {"attr": {}}
     await setup_integration(hass, gyre_config_entry)
     coordinator = gyre_config_entry.runtime_data
     registry = er.async_get(hass)
-    entity = 'binary_sensor.maxspect_my_gyre_bak1'
+    entity = 'sensor.maxspect_my_gyre_wash_raw'
     assert registry.async_get(entity).hidden_by == er.RegistryEntryHider.INTEGRATION
     assert registry.async_get(entity).disabled_by is None
-    coordinator.data.generic_attrs['Bak1'] = True
+    coordinator.data.generic_attrs['Wash'] = 10
     coordinator.async_set_updated_data(coordinator.data)
     await hass.async_block_till_done()
     assert registry.async_get(entity).hidden_by is None
-    assert hass.states.get(entity).state == 'on'
+    assert hass.states.get(entity).state == '10'
     registry.async_update_entity(entity, hidden_by=er.RegistryEntryHider.USER)
-    coordinator.data.generic_attrs['Bak1'] = False
+    coordinator.data.generic_attrs['Wash'] = 0
     coordinator.async_set_updated_data(coordinator.data)
     await hass.async_block_till_done()
     assert registry.async_get(entity).hidden_by == er.RegistryEntryHider.USER
-    assert hass.states.get(entity).state == 'off'
+    assert hass.states.get(entity).state == '0'
 
 
 async def test_countdown_clears_after_feeding(
@@ -190,3 +191,23 @@ async def test_decoded_metadata_and_feeding_minutes(
     sensor = MaxspectDatapointSensor(coordinator, 'test', 19)
     assert sensor.native_value == 15
     assert sensor.native_unit_of_measurement == 'min'
+
+async def test_retired_raw_entities_are_removed_from_registry(
+    hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
+):
+    from homeassistant.helpers import entity_registry as er
+    gyre_config_entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    base = gyre_config_entry.unique_id or gyre_config_entry.data['host']
+    retired = registry.async_get_or_create(
+        'sensor', 'maxspect', f'{base}_dp_44',
+        config_entry=gyre_config_entry, suggested_object_id='retired_bak24',
+    )
+    retained = registry.async_get_or_create(
+        'sensor', 'maxspect', f'{base}_dp_18',
+        config_entry=gyre_config_entry, suggested_object_id='retained_mode',
+    )
+    await hass.config_entries.async_setup(gyre_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get(retired.entity_id) is None
+    assert registry.async_get(retained.entity_id) is not None

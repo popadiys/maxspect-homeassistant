@@ -3,7 +3,7 @@
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.const import EntityCategory
 
-from .const import DEVICE_TYPE_GYRE, GYRE_DP_NAMES
+from .const import DEVICE_TYPE_GYRE, GYRE_DP_NAMES, GYRE_INTERNAL_ONLY_DPS
 from .coordinator import MaxspectCoordinator
 from .entity import MaxspectReportedEntity
 
@@ -11,7 +11,10 @@ from .entity import MaxspectReportedEntity
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = entry.runtime_data
     if isinstance(coordinator, MaxspectCoordinator) and coordinator.device_type == DEVICE_TYPE_GYRE:
-        async_add_entities(MaxspectDatapointBinarySensor(coordinator, dp) for dp in range(17))
+        async_add_entities(
+            MaxspectDatapointBinarySensor(coordinator, dp)
+            for dp in range(17) if dp not in GYRE_INTERNAL_ONLY_DPS
+        )
 
 
 class MaxspectDatapointBinarySensor(MaxspectReportedEntity, BinarySensorEntity):

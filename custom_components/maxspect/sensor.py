@@ -34,6 +34,7 @@ from .const import (
     LED_CHANNEL_COUNT,
     MODE_NAMES,
     GYRE_DP_NAMES,
+    GYRE_INTERNAL_ONLY_DPS,
 )
 from .coordinator import MaxspectCoordinator
 from .gyre_program import decode_serial_number
@@ -88,6 +89,7 @@ async def async_setup_entry(
         entities.extend(
             MaxspectDatapointSensor(coordinator, unique_base, dp)
             for dp in range(17, len(GYRE_DP_NAMES))
+            if dp not in GYRE_INTERNAL_ONLY_DPS
         )
     elif dt in (DEVICE_TYPE_LED_6CH, DEVICE_TYPE_LED_8CH, DEVICE_TYPE_LED_E8):
         entities = _led_sensors(coordinator, unique_base, dt)

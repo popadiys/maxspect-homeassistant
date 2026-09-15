@@ -6,11 +6,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .api import MaxspectConnectionError
 from .cloud import GizwitsCloudError
-from .const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DOMAIN
+from .const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DEVICE_TYPE_GYRE, DOMAIN, GYRE_INTERNAL_ONLY_DPS
 from .coordinator import MaxspectCoordinator
 from .icv6_api import ICV6ConnectionError
 from .icv6_coordinator import ICV6Coordinator
@@ -126,6 +126,13 @@ async def _async_setup_gizwits(
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if coordinator.device_type == DEVICE_TYPE_GYRE:
+        registry = er.async_get(hass)
+        base = entry.unique_id or coordinator.client.host
+        retired_ids = {f"{base}_dp_{dp}" for dp in GYRE_INTERNAL_ONLY_DPS}
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if entity.platform == DOMAIN and entity.unique_id in retired_ids:
+                registry.async_remove(entity.entity_id)
     return True
 
 

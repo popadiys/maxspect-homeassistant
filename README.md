@@ -130,17 +130,17 @@ The **Start feeding pause** button uses the duration stored on the controller.
 in Configure to use LAN commands; Home Assistant waits for a matching device
 mode report and falls back to cloud control on failure.
 
-All 47 schema data points are exposed as read-only diagnostics: connection and
-error flags, firmware, settings, serial/time, manual and scheduled programs,
-feeding countdown, backup settings, current fields and reserved fields.
-Unreported values stay unknown and are hidden from the default UI until reported.
+All 47 schema data points are parsed internally. Useful decoded values and
+remaining diagnostics are exposed as entities. Reserved `Bak` fields and the
+redundant raw Auto, Manual, Backup, Model A/B, Time, Countdown Feed and Upgrade
+License entities are not created. Unused Reboot, Factory Settings and
+Current A/B raw diagnostics are also omitted. Existing entries are removed on
+upgrade.
+Their underlying data remains available to the decoded sensors and saved
+programs. Unreported diagnostics stay unknown and hidden until reported.
 Connection/error sensors remain visible even when unknown, and appear in the
-device Sensors section alongside the raw channel power sensors. Other hidden
-diagnostics remain enabled; a later report automatically reveals the entity, unless
-you explicitly hid it yourself. Pump connection flags are inverted (0 means
-connected), and pump error flags use the problem device class (1 means error).
-Long binary values show their byte count with
-full data in `raw_hex`; undefined fields are intentionally left raw.
+device Sensors section alongside the raw channel power sensors. A user-hidden
+entity remains hidden when new reports arrive.
 
 **Feeding time remaining** decodes `Countdown_Feed` as three bytes: hours,
 minutes, seconds. It reports seconds with a readable `remaining_hms` attribute,

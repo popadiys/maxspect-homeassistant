@@ -149,3 +149,9 @@ HEARTBEAT_INTERVAL = 20.0
 
 # Discovery
 DISCOVERY_TIMEOUT = 5.0
+
+# Retain these fields in protocol data, without creating redundant raw entities.
+GYRE_INTERNAL_ONLY_DPS = frozenset(
+    {0, 1, 2, 20, 21, 34, 35, 36, 37, 38, 39, 40}
+    | set(range(7, 17)) | set(range(23, 33)) | set(range(41, 47))
+)
