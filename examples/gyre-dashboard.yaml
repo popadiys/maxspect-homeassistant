@@ -18,6 +18,16 @@ views:
       name: Start feeding pause
     - entity: button.maxspect_pumps_resume_pumps
       name: Resume pumps
+  - type: button
+    entity: button.maxspect_pumps_refresh_schedule_and_settings
+    name: Refresh controller data
+    icon: mdi:database-refresh
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: button.press
+      target:
+        entity_id: button.maxspect_pumps_refresh_schedule_and_settings
   - type: entities
     title: Pump sensors
     show_header_toggle: false
@@ -58,8 +68,6 @@ views:
       name: Active pattern
     - entity: sensor.maxspect_pumps_pump_b_programmed_power
       name: Programmed output
-    - entity: button.maxspect_pumps_refresh_schedule_and_settings
-      name: Refresh schedule and settings
   - type: markdown
     content: '## Daily schedule
 
@@ -98,8 +106,10 @@ views:
       valid reports automatically.
 
 
-      Use **Refresh schedule and settings** to request a new report. The refresh status
-      says whether a new schedule arrived. If it does not arrive, the saved values
+      Use **Refresh controller data** to request all controller data points over the
+      local network. Live sensor readings update as reports arrive. The refresh result
+      below confirms whether a fresh schedule arrived; individual readings may update
+      even when the full schedule does not. If it does not arrive, the saved values
       remain available. Opening this Gyre in Syna-G can also trigger a full report,
       which Home Assistant saves automatically.
 
