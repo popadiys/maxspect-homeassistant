@@ -8,19 +8,58 @@ views:
     title: Controller and feeding
     show_header_toggle: false
     entities:
-    - sensor.maxspect_pumps_mode
-    - sensor.maxspect_pumps_feed_duration
-    - sensor.maxspect_pumps_feeding_time_remaining
-    - button.maxspect_pumps_start_feeding_pause
-    - button.maxspect_pumps_resume_pumps
+    - entity: sensor.maxspect_pumps_mode
+      name: Operating mode
+    - entity: sensor.maxspect_pumps_feed_duration
+      name: Feeding pause duration
+    - entity: sensor.maxspect_pumps_feeding_time_remaining
+      name: Feeding time remaining
+    - entity: button.maxspect_pumps_start_feeding_pause
+      name: Start feeding pause
+    - entity: button.maxspect_pumps_resume_pumps
+      name: Resume pumps
+  - type: entities
+    title: Pump sensors
+    show_header_toggle: false
+    entities:
+    - type: section
+      label: Pump A
+    - entity: binary_sensor.maxspect_pumps_pump_a_connected
+      name: Connection
+    - entity: binary_sensor.maxspect_pumps_pump_a_error
+      name: Error status
+    - entity: sensor.maxspect_pumps_channel_1_rpm
+      name: Motor speed
+    - entity: sensor.maxspect_pumps_channel_1_power
+      name: Power reading (raw)
+    - type: section
+      label: Pump B
+    - entity: binary_sensor.maxspect_pumps_pump_b_connected
+      name: Connection
+    - entity: binary_sensor.maxspect_pumps_pump_b_error
+      name: Error status
+    - entity: sensor.maxspect_pumps_channel_2_rpm
+      name: Motor speed
+    - entity: sensor.maxspect_pumps_channel_2_power
+      name: Power reading (raw)
   - type: entities
     title: Current program settings
+    show_header_toggle: false
     entities:
-    - sensor.maxspect_pumps_pump_a_active_pattern
-    - sensor.maxspect_pumps_pump_a_programmed_power
-    - sensor.maxspect_pumps_pump_b_active_pattern
-    - sensor.maxspect_pumps_pump_b_programmed_power
-    - button.maxspect_pumps_refresh_schedule_and_settings
+    - type: section
+      label: Pump A
+    - entity: sensor.maxspect_pumps_pump_a_active_pattern
+      name: Active pattern
+    - entity: sensor.maxspect_pumps_pump_a_programmed_power
+      name: Programmed output
+    - type: section
+      label: Pump B
+    - entity: sensor.maxspect_pumps_pump_b_active_pattern
+      name: Active pattern
+    - entity: sensor.maxspect_pumps_pump_b_programmed_power
+      name: Programmed output
+    - entity: button.maxspect_pumps_refresh_schedule_and_settings
+      name: Refresh schedule and settings
   - type: markdown
     content: '## Daily schedule
 
@@ -80,16 +119,3 @@ views:
       successful refresh.
 
       '
-  - type: entities
-    title: Sensors
-    entities:
-    - binary_sensor.maxspect_pumps_pump_a_connected
-    - binary_sensor.maxspect_pumps_pump_b_connected
-    - binary_sensor.maxspect_pumps_pump_a_error
-    - binary_sensor.maxspect_pumps_pump_b_error
-    - sensor.maxspect_pumps_channel_1_rpm
-    - sensor.maxspect_pumps_channel_2_rpm
-    - entity: sensor.maxspect_pumps_channel_1_power
-      name: Channel 1 power (raw)
-    - entity: sensor.maxspect_pumps_channel_2_power
-      name: Channel 2 power (raw)
