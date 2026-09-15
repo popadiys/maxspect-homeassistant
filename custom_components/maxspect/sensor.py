@@ -78,6 +78,12 @@ async def async_setup_entry(
 
     if dt == DEVICE_TYPE_GYRE:
         entities: list[SensorEntity] = _gyre_sensors(coordinator, unique_base)
+        entities.extend([
+            MaxspectProgramSensor(coordinator, unique_base, "schedule"),
+            MaxspectProgramSensor(coordinator, unique_base, "refresh"),
+            *(MaxspectProgramSensor(coordinator, unique_base, kind, channel)
+              for channel in ("a", "b") for kind in ("pattern", "power")),
+        ])
         entities.extend(
             MaxspectDatapointSensor(coordinator, unique_base, dp)
             for dp in range(17, len(GYRE_DP_NAMES))
@@ -714,3 +720,56 @@ class ICV6DeviceIdSensor(ICV6Entity, SensorEntity):
         if dev is None:
             return None
         return dev.device_id
+
+
+class MaxspectProgramSensor(MaxspectEntity, SensorEntity):
+    """Decoded saved program and the active scheduled pump settings."""
+
+    def __init__(self, coordinator, unique_base: str, kind: str, channel: str = "") -> None:
+        super().__init__(coordinator)
+        self.kind, self.channel = kind, channel
+        self._attr_unique_id = f"{unique_base}_program_{kind}_{channel}"
+        self._attr_name = {
+            "schedule": "Saved schedule", "refresh": "Schedule refresh status",
+            "pattern": f"Pump {channel.upper()} active pattern",
+            "power": f"Pump {channel.upper()} programmed power",
+        }[kind]
+        if kind == "power":
+            self._attr_native_unit_of_measurement = "%"
+            self._attr_icon = "mdi:percent"
+        else:
+            self._attr_icon = "mdi:calendar-clock" if kind == "schedule" else "mdi:waves"
+
+    @property
+    def native_value(self):
+        from .gyre_program import decode_program
+        if self.kind == "schedule":
+            entries = decode_program(self.coordinator.saved_settings.get("Auto"), scheduled=True)
+            return f"{len(entries)} entries" if entries else None
+        if self.kind == "refresh":
+            return self.coordinator.refresh_status
+        entry = self.coordinator.current_program_entry()
+        if not entry:
+            if self.kind == "pattern":
+                return {2: "Feeding pause", 3: "Off"}.get(self.coordinator.data.mode)
+            return None
+        return entry[self.channel]["pattern" if self.kind == "pattern" else "power_percent"]
+
+    @property
+    def extra_state_attributes(self):
+        from .gyre_program import decode_program
+        attrs = {
+            "last_schedule_received": self.coordinator.settings_received.get("Auto"),
+            "last_manual_received": self.coordinator.settings_received.get("Manual"),
+            "refresh_help": "Saved settings survive restarts. Refresh requests a fresh device report. If none arrives, saved values remain; opening the Gyre page in Syna-G can trigger a full report.",
+        }
+        if self.kind == "schedule":
+            attrs["entries"] = decode_program(self.coordinator.saved_settings.get("Auto"), scheduled=True)
+        elif self.kind in ("pattern", "power"):
+            entry = self.coordinator.current_program_entry()
+            if entry:
+                attrs.update(entry[self.channel])
+                attrs["schedule_start"] = entry.get("time")
+            attrs["clock_source"] = "Controller clock" if self.coordinator.client.controller_time_now() else "Home Assistant local time (controller clock not yet reported)"
+            attrs["meaning"] = "Programmed setting, not instantaneous output or measured watts. Active schedule uses the reported controller clock."
+        return attrs

@@ -152,6 +152,33 @@ Controller modes are Water Flow/manual (0), Programming/schedule (1), Feed (2)
 and Off (3). Exit Feed (4) and On (5) are commands. Per-pump movement patterns
 are separate fields inside the Manual/Auto program blobs.
 
+### Saved schedules and programmed power
+
+Gyre schedules and manual settings are saved using Home Assistant storage and
+restored before connecting. Old RPM, connection/error flags and operating mode
+are not restored as live readings. Invalid or missing program responses never
+replace the last valid saved program.
+
+The **Saved schedule** sensor exposes all daily entries in its `entries`
+attribute. **Pump A/B active pattern** and **Pump A/B programmed power** select
+the active entry using the controller clock, or Home Assistant local time until
+the controller reports its clock after startup. Percentages are programmed
+settings, not instantaneous output or electrical watts. Alternating settings
+include the signed secondary percentage in `alternate_power_percent`.
+
+**Refresh schedule and settings** requests data without writing settings. The
+integration also requests settings over LAN every minute. The refresh status
+and last received timestamp distinguish saved values from a fresh report.
+On the tested XF350CE firmware, these reads can receive only an acknowledgement
+and live deltas; opening the device page in Syna-G triggers a full program
+report. The integration preserves saved values when that report is absent.
+Reliable app-independent full-program refresh remains unverified, including
+when tested through the documented cloud WebSocket read API.
+
+[Example Gyre dashboard](examples/gyre-dashboard.yaml) includes the schedule,
+per-pump patterns and percentages, feeding controls, and on-screen renewal
+instructions. Adjust its entity IDs to match your installation.
+
 The original channel power sensors remain enabled as **raw** electrical values.
 Their former watt unit was unverified. Maxspect specifies **5–52 W for XF350CE**,
 but the app defines `Current_A/B` as firmware-specific and `Bak24` as reserved;

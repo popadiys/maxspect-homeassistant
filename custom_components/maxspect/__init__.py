@@ -103,6 +103,7 @@ async def _async_setup_gizwits(
 ) -> bool:
     """Set up a Gizwits (LAN + Cloud) device entry."""
     coordinator = MaxspectCoordinator(hass, entry)
+    await coordinator.async_load_settings()
 
     try:
         await coordinator.client.async_connect()
@@ -140,7 +141,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) ->
         if isinstance(coordinator, ICV6Coordinator):
             pass  # ICV6 connections are stateless (new socket per request)
         else:
-            await coordinator.client.async_disconnect()
-            if coordinator.cloud is not None:
-                await coordinator.cloud.async_close()
+            await coordinator.async_shutdown()
     return unload_ok

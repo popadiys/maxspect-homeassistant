@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import asyncio
 import time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
+from .gyre_program import decode_program, active_entry
+
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
@@ -66,6 +71,12 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             port=entry.data.get(CONF_PORT, DEFAULT_PORT),
         )
         self.client.set_update_callback(self._on_device_push)
+        self._program_store = Store(hass, 1, f"maxspect_program_{entry.entry_id}")
+        self.saved_settings: dict = {}
+        self.settings_received: dict = {}
+        self.refresh_status = "Saved values; awaiting device report"
+        self._program_refresh_lock = asyncio.Lock()
+
         for dp_id, field_name in ((20, "model_a"), (21, "model_b")):
             model = entry.options.get(field_name, -1)
             if model in (0, 1):
@@ -98,6 +109,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         return PRODUCT_KEY_TO_DEVICE_TYPE.get(pk, DEVICE_TYPE_GYRE)
 
     def _on_device_push(self) -> None:
+        self._remember_settings(self.client.last_report_attrs)
         if self.device_type != DEVICE_TYPE_GYRE:
             # LAN telemetry parsing is Gyre-specific; non-Gyre state comes
             # from cloud seeding only — ignore raw LAN pushes.
@@ -187,6 +199,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
         state = self.client.state
         state.generic_attrs.update(attrs)
+        self._remember_settings(attrs, fresh=False)
 
         if self.device_type == DEVICE_TYPE_GYRE:
             # Compact telemetry (mode, RPM, voltage, power)
@@ -201,7 +214,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             time_hex = attrs.get("Time")
             if time_hex:
                 try:
-                    _parse_state_notify(bytes.fromhex(time_hex), state)
+                    self.client.apply_attributes({"Time": time_hex})
                 except (ValueError, TypeError):
                     _LOGGER.debug("Could not parse cloud Time: %s", time_hex)
 
@@ -251,6 +264,72 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             )
 
         self.async_set_updated_data(state)
+
+    async def async_load_settings(self) -> None:
+        """Restore configuration, never old live telemetry or error flags."""
+        saved = await self._program_store.async_load() or {}
+        self.saved_settings = saved.get("settings", {})
+        self.settings_received = saved.get("received", {})
+        self.client.apply_attributes(self.saved_settings)
+
+    def _remember_settings(self, attrs: dict, *, fresh: bool = True) -> None:
+        if self.device_type != DEVICE_TYPE_GYRE:
+            return
+        changed = False
+        for key in ("Manual", "Auto", "Time_Feed", "Model_A", "Model_B", "Version_Firmware", "Serial_Number", "Wash"):
+            if key not in attrs:
+                continue
+            value = attrs[key]
+            if key in ("Manual", "Auto") and not decode_program(value, scheduled=key == "Auto"):
+                continue
+            if key == "Time_Feed" and (not isinstance(value, int) or not 5 <= value <= 120):
+                continue
+            self.saved_settings[key] = value
+            if fresh:
+                self.settings_received[key] = dt_util.utcnow().isoformat()
+            changed = True
+        if changed:
+            self._program_store.async_delay_save(
+                lambda: {"settings": self.saved_settings, "received": self.settings_received}, 2,
+            )
+
+    def current_program_entry(self) -> dict | None:
+        state = self.client.state
+        if state.mode == 0:
+            entries = decode_program(self.saved_settings.get("Manual"), scheduled=False)
+            return entries[0] if entries else None
+        if state.mode != 1:
+            return None
+        # Advance the last reported controller clock by elapsed monotonic time.
+        clock = self.client.controller_time_now()
+        if clock is None:
+            clock = dt_util.now()
+        return active_entry(decode_program(self.saved_settings.get("Auto"), scheduled=True), clock.hour * 60 + clock.minute)
+
+    async def async_refresh_program(self) -> None:
+        """Request a fresh report; never clear saved data on missing responses."""
+        import asyncio
+        async with self._program_refresh_lock:
+            before = self.settings_received.get("Auto")
+            self.refresh_status = "Requesting schedule from controller"
+            self.async_set_updated_data(self.client.state)
+            try:
+                await self.client.async_request_full_status()
+                for _ in range(10):
+                    await asyncio.sleep(1)
+                    if self.settings_received.get("Auto") != before:
+                        self.refresh_status = "Schedule received from controller"
+                        break
+                else:
+                    await self.async_seed_from_cloud()
+                    self.refresh_status = (
+                        "Schedule received from controller" if self.settings_received.get("Auto") != before
+                        else "No fresh schedule received; saved values retained"
+                    )
+            except (MaxspectConnectionError, OSError) as err:
+                self.refresh_status = "Refresh failed; saved values retained"
+                _LOGGER.warning("Program refresh failed: %s", err)
+            self.async_set_updated_data(self.client.state)
 
     async def async_set_power(self, on: bool) -> None:
         """Turn the device on or off, routing to the correct cloud command."""
@@ -307,6 +386,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         return self.client.state
 
     async def async_shutdown(self) -> None:
+        await self._program_store.async_save({"settings": self.saved_settings, "received": self.settings_received})
         await super().async_shutdown()
         await self.client.async_disconnect()
         if self.cloud is not None:

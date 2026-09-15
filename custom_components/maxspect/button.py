@@ -19,6 +19,7 @@ async def async_setup_entry(
     if not isinstance(coordinator, MaxspectCoordinator) or coordinator.device_type != DEVICE_TYPE_GYRE:
         return
     async_add_entities([
+        MaxspectRefreshButton(coordinator),
         MaxspectFeedingButton(coordinator, MODE_FEED, "start_feeding", "mdi:fish"),
         MaxspectFeedingButton(coordinator, MODE_EXIT_FEED, "resume_pumps", "mdi:play"),
     ])
@@ -37,3 +38,18 @@ class MaxspectFeedingButton(MaxspectEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.coordinator.async_set_mode(self._mode)
+
+
+class MaxspectRefreshButton(MaxspectEntity, ButtonEntity):
+    """Request program/settings without writing to the pumps."""
+
+    _attr_name = "Refresh schedule and settings"
+    _attr_icon = "mdi:refresh"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        base = coordinator.config_entry.unique_id or coordinator.client.host
+        self._attr_unique_id = f"{base}_refresh_program"
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_refresh_program()

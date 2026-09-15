@@ -20,6 +20,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
+from datetime import datetime, timedelta
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -245,6 +247,9 @@ class MaxspectClient:
     def __init__(self, host: str, port: int = 12416) -> None:
         self._host = host
         self._port = port
+        self.last_report_attrs: dict[str, Any] = {}
+        self._clock_reference: tuple[datetime, float] | None = None
+        self._clock_payload: str | None = None
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._connected = False
@@ -399,10 +404,7 @@ class MaxspectClient:
             # Refresh all defined data points, including static diagnostics.
             if now - last_config_poll >= 60:
                 try:
-                    self._writer.write(
-                        _build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS)
-                    )
-                    await self._writer.drain()
+                    await self.async_request_full_status()
                     last_config_poll = now
                 except OSError:
                     _LOGGER.warning("Config poll send failed to %s", self._host)
@@ -423,6 +425,8 @@ class MaxspectClient:
 
             if resp["cmd"] == CMD_DATA_RECV:
                 self._process_push(resp["payload"])
+            elif resp["cmd"] == 0x0094 and len(resp["payload"]) > 4:
+                self._process_push(resp["payload"][4:])
             elif resp["cmd"] == CMD_HEARTBEAT_RESP:
                 _LOGGER.debug("Heartbeat ACK from %s", self._host)
                 last_heartbeat = loop.time()
@@ -455,6 +459,7 @@ class MaxspectClient:
             offset += length
         if not attrs:
             return
+        self.last_report_attrs = attrs
         self.apply_attributes(attrs)
         if "Mode" in attrs or "Bak24" in attrs:
             self._reported_mode = self._state.mode
@@ -472,6 +477,12 @@ class MaxspectClient:
             if isinstance(value, str):
                 try:
                     parser(bytes.fromhex(value), state)
+                    if name == "Time" and value != self._clock_payload:
+                        raw = bytes.fromhex(value)
+                        if len(raw) == 7:
+                            clock = datetime(2000 + raw[1], *raw[2:])
+                            self._clock_reference = (clock, time.monotonic())
+                            self._clock_payload = value
                 except ValueError:
                     _LOGGER.debug("Invalid hex in %s", name)
         mode = attrs.get("Mode")
@@ -495,6 +506,21 @@ class MaxspectClient:
             state._model_initialized = True
 
     # -- Public API ----------------------------------------------------
+
+    def controller_time_now(self) -> datetime | None:
+        if self._clock_reference is None:
+            return None
+        clock, received = self._clock_reference
+        return clock + timedelta(seconds=time.monotonic() - received)
+
+    async def async_request_full_status(self) -> None:
+        """Send the SDK's sequenced read request and the legacy read request."""
+        if not self.connected:
+            await self.async_connect()
+        assert self._writer is not None
+        self._writer.write(_build_frame(0x0093, payload=b"\x00\x00\x00\x03" + bytes([ACTION_READ]) + b"\xff" * 6))
+        self._writer.write(_build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS))
+        await self._writer.drain()
 
     async def async_request_status(self) -> MaxspectDeviceState:
         if not self.connected:
