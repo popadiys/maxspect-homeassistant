@@ -66,6 +66,12 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             port=entry.data.get(CONF_PORT, DEFAULT_PORT),
         )
         self.client.set_update_callback(self._on_device_push)
+        for dp_id, field_name in ((20, "model_a"), (21, "model_b")):
+            model = entry.options.get(field_name, -1)
+            if model in (0, 1):
+                setattr(self.client.state, field_name, model)
+                self.client.state._initialized_models.add(dp_id)
+        self.client.state._model_initialized = self.client.state._initialized_models == {20, 21}
 
         # Monotonic deadline below which stale LAN pushes are suppressed.
         self._write_lock_until: float = 0.0
@@ -134,7 +140,15 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             self.cloud.did = self._cloud_did
 
     async def async_set_mode(self, mode: int) -> None:
-        """Set the device mode via the cloud API."""
+        """Use confirmed LAN control when selected, with cloud fallback."""
+        if self.config_entry.options.get("local_control", False):
+            try:
+                await self.client.async_set_mode(mode)
+            except (MaxspectConnectionError, OSError) as err:
+                _LOGGER.warning("LAN control failed; trying cloud: %s", err)
+            else:
+                self.async_set_updated_data(self.client.state)
+                return
         if self.cloud is None:
             raise GizwitsCloudError("Cloud credentials not configured")
         try:
@@ -165,14 +179,14 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
         attrs = data.get("attr", {})
         if not attrs:
-            _LOGGER.warning(
-                "Cloud status for did=%s returned empty attr dict — "
-                "device may be offline or not reporting data",
+            _LOGGER.debug(
+                "Cloud status for did=%s returned no new attributes",
                 self._cloud_did,
             )
             return
 
         state = self.client.state
+        state.generic_attrs.update(attrs)
 
         if self.device_type == DEVICE_TYPE_GYRE:
             # Compact telemetry (mode, RPM, voltage, power)
@@ -198,21 +212,20 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 ("Wash", "wash_reminder"),
             ):
                 val = attrs.get(attr_name)
-                if val is not None:
+                if val is not None and (attr_name != "Time_Feed" or 5 <= int(val) <= 120):
                     setattr(state, field_name, int(val))
 
             # Model attributes are immutable - only set once
             if not state._model_initialized:
-                model_set = False
-                for attr_name, field_name in (
-                    ("Model_A", "model_a"),
-                    ("Model_B", "model_b"),
+                for attr_name, field_name, dp_id in (
+                    ("Model_A", "model_a", 20),
+                    ("Model_B", "model_b", 21),
                 ):
                     val = attrs.get(attr_name)
-                    if val is not None:
+                    if val in (0, 1) and dp_id not in state._initialized_models:
                         setattr(state, field_name, int(val))
-                        model_set = True
-                if model_set:
+                        state._initialized_models.add(dp_id)
+                if state._initialized_models == {20, 21}:
                     state._model_initialized = True
 
             state.is_on = state.mode != MODE_OFF
@@ -241,7 +254,10 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
     async def async_set_power(self, on: bool) -> None:
         """Turn the device on or off, routing to the correct cloud command."""
-        if self.cloud is None:
+        if self.cloud is None and not (
+            self.device_type == DEVICE_TYPE_GYRE
+            and self.config_entry.options.get("local_control", False)
+        ):
             raise GizwitsCloudError("Cloud credentials not configured")
 
         ctrl = DEVICE_CONTROL.get(self.device_type)
@@ -284,9 +300,9 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 await self.client.async_connect()
             except MaxspectConnectionError as err:
                 raise UpdateFailed(f"Error connecting: {err}") from err
-        if self.device_type != DEVICE_TYPE_GYRE:
-            # Non-Gyre devices ignore LAN pushes, so we must poll the cloud
-            # on each scan interval to keep channel and mode state current.
+        if self.device_type != DEVICE_TYPE_GYRE or time.monotonic() >= self._write_lock_until:
+            # The endpoint returns deltas. Merge diagnostics on every poll,
+            # but do not overwrite a pending Gyre command with stale cloud data.
             await self.async_seed_from_cloud()
         return self.client.state
 

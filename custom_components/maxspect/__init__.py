@@ -19,7 +19,7 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.BUTTON, Platform.BINARY_SENSOR]
 
 type MaxspectConfigEntry = ConfigEntry[MaxspectCoordinator | ICV6Coordinator]
 
@@ -27,10 +27,16 @@ type MaxspectConfigEntry = ConfigEntry[MaxspectCoordinator | ICV6Coordinator]
 async def async_setup_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> bool:
     """Set up Maxspect from a config entry."""
 
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     if entry.data.get(CONF_DEVICE_PROTOCOL) == DEVICE_PROTOCOL_ICV6:
         return await _async_setup_icv6(hass, entry)
 
     return await _async_setup_gizwits(hass, entry)
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 # ---------------------------------------------------------------------------

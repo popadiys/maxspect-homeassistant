@@ -27,7 +27,7 @@ Maxspect Gyre pumps and LED fixtures use the **Gizwits IoT platform**.
 | Capability | Gyre XF330CE | Other devices |
 |---|---|---|
 | State monitoring | LAN push (fast, local) | Cloud polling |
-| Commands (on/off, mode) | Cloud API | Cloud API |
+| Commands (on/off, feeding, resume) | Optional confirmed LAN control; cloud fallback | Cloud API |
 
 **Cloud credentials are required** for all Gizwits devices.
 
@@ -36,7 +36,7 @@ Maxspect Gyre pumps and LED fixtures use the **Gizwits IoT platform**.
 - **ICV6 hub** — fully local, no cloud account; connected LEDs and pumps discovered automatically
 - **Live LED brightness** — in Auto Schedule mode the channel sensor shows the interpolated live value, not the stored manual setpoint
 - **Schedule visibility** — per-channel schedule points exposed as extra state attributes
-- **Cloud + LAN hybrid** — for Gizwits devices, state updates via LAN push where supported; commands via the Gizwits cloud API
+- **Cloud + LAN hybrid** — for Gizwits devices, state updates via LAN push and cloud deltas; Gyre commands can use confirmed LAN control with cloud fallback
 - **Pump control** — on/off for Maxspect Gyre pumps and ICV6-connected pumps
 - **Light control** — on/off and per-channel brightness for Maxspect LED fixtures
 
@@ -59,6 +59,7 @@ Maxspect Gyre pumps and LED fixtures use the **Gizwits IoT platform**.
 | Status | Device | Type |
 |---|---|---|
 | ✅ Confirmed | Gyre XF330CE | Pump |
+| ✅ Confirmed | Gyre XF350CE | Pump (LAN telemetry, LAN feeding/resume, cloud on/off tested) |
 | 🔄 Testing | LED L165 (wifi灯) | Light |
 | ❓ Unknown | LED MJ-L265 / L290 | Light |
 | ❓ Unknown | LED E8 | Light |
@@ -70,6 +71,7 @@ Maxspect Gyre pumps and LED fixtures use the **Gizwits IoT platform**.
 ## Installation
 
 ### HACS (Recommended)
+
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** → **⋮** → **Custom repositories**
@@ -95,11 +97,51 @@ Connected LEDs and pumps are discovered automatically after HA starts. Discovery
 
 ### Gizwits devices
 
+XF330CE and XF350CE controllers share a Gizwits product key. The device
+registry therefore shows the family name; per-pump model sensors remain
+unknown until model metadata is received.
+
+**Protocol correction:** older versions reversed the read/write action bytes.
+`0x11` is a write; `0x12` is a read; `0x13` is a read response. The old polling
+requests could change device settings. Check the controller's clock, model
+selection and feeding duration after upgrading. Invalid feeding values are
+ignored by the display; this does not repair already altered settings.
+
+If the controller reports missing or incorrect pump models, open the
+integration's **Configure** options and select **XF330CE** or **XF350CE**
+for each pump. **Automatic** uses device metadata. These settings only
+identify the hardware in Home Assistant; they do not reprogram the pumps.
+
+Choose the region where your app account is hosted, which may differ from
+your physical location. If login reports "user does not exist", check the
+region as well as the credentials. An XF350CE account used in Europe was
+successfully authenticated using the United States region.
+
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for "Maxspect"
 3. Select **Gizwits device (Gyre pump, LED lights, Aquarium)**
 4. Enter the **device IP address** (and optionally port)
 5. Enter your **Gizwits / Syna-G+ app credentials** (username, password, region)
+
+#### Feeding and diagnostics
+
+The **Start feeding pause** button uses the duration stored on the controller.
+**Resume pumps** exits feeding early. Enable **Prefer confirmed local control**
+in Configure to use LAN commands; Home Assistant waits for a matching device
+mode report and falls back to cloud control on failure.
+
+All 47 schema data points are exposed as read-only diagnostics: connection and
+error flags, firmware, settings, serial/time, manual and scheduled programs,
+feeding countdown, backup settings, current fields and reserved fields.
+Unreported values stay unknown. Long binary values show their byte count with
+full data in `raw_hex`; undefined fields are intentionally left raw.
+
+The original channel power sensors remain enabled as **raw** electrical values.
+Their former watt unit was unverified. Maxspect specifies **5–52 W for XF350CE**,
+but the app defines `Current_A/B` as firmware-specific and `Bak24` as reserved;
+there is no documented conversion from these bytes to watts. Do not infer a
+scale merely from rated maximum power. Voltage and RPM decoding is unchanged.
+See [Maxspect's specifications](https://www.maxspect.com/en/innovate-series/617-gyre-300-ce).
 
 ## Contributing & Adding New Devices
 

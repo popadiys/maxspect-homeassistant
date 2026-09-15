@@ -12,7 +12,6 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     EntityCategory,
     UnitOfElectricPotential,
-    UnitOfPower,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -34,6 +33,7 @@ from .const import (
     LED_8CH_MODE_NAMES,
     LED_CHANNEL_COUNT,
     MODE_NAMES,
+    GYRE_DP_NAMES,
 )
 from .coordinator import MaxspectCoordinator
 from .entity import ICV6Entity, MaxspectEntity
@@ -78,6 +78,10 @@ async def async_setup_entry(
 
     if dt == DEVICE_TYPE_GYRE:
         entities: list[SensorEntity] = _gyre_sensors(coordinator, unique_base)
+        entities.extend(
+            MaxspectDatapointSensor(coordinator, unique_base, dp)
+            for dp in range(17, len(GYRE_DP_NAMES))
+        )
     elif dt in (DEVICE_TYPE_LED_6CH, DEVICE_TYPE_LED_8CH, DEVICE_TYPE_LED_E8):
         entities = _led_sensors(coordinator, unique_base, dt)
     elif dt == DEVICE_TYPE_AQUARIUM_20:
@@ -142,6 +146,33 @@ def _aquarium_sys_sensors(coordinator: MaxspectCoordinator, unique_base: str) ->
 # ---------------------------------------------------------------------------
 # Sensor entity classes
 # ---------------------------------------------------------------------------
+
+class MaxspectDatapointSensor(MaxspectEntity, SensorEntity):
+    """Read-only access to every scalar and binary Gyre data point."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, unique_base: str, dp: int) -> None:
+        super().__init__(coordinator)
+        self._dp = dp
+        self._key = GYRE_DP_NAMES[dp]
+        self._attr_name = f"{self._key.replace('_', ' ')} raw"
+        self._attr_unique_id = f"{unique_base}_dp_{dp}"
+
+    @property
+    def native_value(self):
+        value = self.coordinator.data.generic_attrs.get(self._key)
+        if isinstance(value, str) and len(value) > 255:
+            return f"{len(value) // 2} bytes"
+        return value
+
+    @property
+    def extra_state_attributes(self):
+        attrs = {"datapoint_id": self._dp, "datapoint_name": self._key}
+        value = self.coordinator.data.generic_attrs.get(self._key)
+        if self._dp >= 33 and isinstance(value, str):
+            attrs["raw_hex"] = value
+        return attrs
 
 class MaxspectModeSensor(MaxspectEntity, SensorEntity):
     """Current operational mode — works for all device types."""
@@ -295,11 +326,9 @@ class MaxspectVoltageSensor(MaxspectEntity, SensorEntity):
 
 
 class MaxspectPowerSensor(MaxspectEntity, SensorEntity):
-    """Channel power sensor."""
+    """Unscaled electrical telemetry, retained until its unit is verified."""
 
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: int) -> None:
         super().__init__(coordinator)
@@ -311,6 +340,13 @@ class MaxspectPowerSensor(MaxspectEntity, SensorEntity):
     def native_value(self) -> int | None:
         val = self.coordinator.data.ch1_power if self._channel == 1 else self.coordinator.data.ch2_power
         return val if val > 0 else None
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "source": "Bak24",
+            "scaling": "unverified; raw value is not watts",
+        }
 
 
 class MaxspectTimestampSensor(MaxspectEntity, SensorEntity):
@@ -347,7 +383,7 @@ class MaxspectFeedDurationSensor(MaxspectEntity, SensorEntity):
 
 
 class MaxspectModelSensor(MaxspectEntity, SensorEntity):
-    """Pump model (DP 20/21): 0 = XF 330CE, non-zero = XF 350CE."""
+    """Pump model (DP 20/21), unknown until device metadata is received."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -359,8 +395,14 @@ class MaxspectModelSensor(MaxspectEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
+        dp_id = 20 if self._channel == "a" else 21
+        if (
+            not self.coordinator.data._model_initialized
+            and dp_id not in self.coordinator.data._initialized_models
+        ):
+            return None
         val = self.coordinator.data.model_a if self._channel == "a" else self.coordinator.data.model_b
-        return "XF 330CE" if val == 0 else "XF 350CE"
+        return {0: "XF 330CE", 1: "XF 350CE"}.get(val)
 
 
 class MaxspectWashReminderSensor(MaxspectEntity, SensorEntity):

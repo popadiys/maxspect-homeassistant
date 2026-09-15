@@ -24,7 +24,10 @@ class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
         host = coordinator.client.host
         device_id = coordinator.config_entry.unique_id or host
         pk = coordinator.config_entry.data.get(CONF_CLOUD_PRODUCT_KEY, "")
-        model = PRODUCT_KEY_TO_MODEL_NAME.get(pk, "Gyre XF330CE")
+        model = PRODUCT_KEY_TO_MODEL_NAME.get(pk, "Maxspect device")
+        options = coordinator.config_entry.options
+        if pk == "cd01d1f3ab2647ea9da51e045cf53d61" and options.get("model_a") == options.get("model_b"):
+            model = {0: "Gyre XF330CE", 1: "Gyre XF350CE"}.get(options.get("model_a"), model)
         cloud_name = coordinator.config_entry.data.get(CONF_CLOUD_DEVICE_NAME, "")
         device_name = f"Maxspect {cloud_name}" if cloud_name else f"Maxspect {host}"
         self._attr_device_info = DeviceInfo(
