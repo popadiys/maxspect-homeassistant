@@ -256,6 +256,8 @@ class MaxspectOptionsFlow(OptionsFlow):
                 for key in ("model_a", "model_b")
         }
         schema[vol.Required("local_control", default=self.config_entry.options.get("local_control", False))] = bool
+        for key in ("device_mac", "firmware_version"):
+            schema[vol.Optional(key, default=self.config_entry.options.get(key, ""))] = str
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),

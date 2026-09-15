@@ -36,7 +36,7 @@ from .const import (
     GYRE_DP_NAMES,
 )
 from .coordinator import MaxspectCoordinator
-from .entity import ICV6Entity, MaxspectEntity
+from .entity import ICV6Entity, MaxspectEntity, MaxspectReportedEntity
 from .icv6_api import ICV6_MODE_NAMES, ICV6_DEVICE_TYPES, compute_current_levels
 from .icv6_coordinator import ICV6Coordinator
 
@@ -109,6 +109,7 @@ def _gyre_sensors(coordinator: MaxspectCoordinator, unique_base: str) -> list[Se
         MaxspectPowerSensor(coordinator, unique_base, 2),
         MaxspectTimestampSensor(coordinator, unique_base),
         MaxspectFeedDurationSensor(coordinator, unique_base),
+        MaxspectFeedRemainingSensor(coordinator, unique_base),
         MaxspectModelSensor(coordinator, unique_base, "a"),
         MaxspectModelSensor(coordinator, unique_base, "b"),
         MaxspectWashReminderSensor(coordinator, unique_base),
@@ -147,7 +148,7 @@ def _aquarium_sys_sensors(coordinator: MaxspectCoordinator, unique_base: str) ->
 # Sensor entity classes
 # ---------------------------------------------------------------------------
 
-class MaxspectDatapointSensor(MaxspectEntity, SensorEntity):
+class MaxspectDatapointSensor(MaxspectReportedEntity, SensorEntity):
     """Read-only access to every scalar and binary Gyre data point."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -158,10 +159,32 @@ class MaxspectDatapointSensor(MaxspectEntity, SensorEntity):
         self._key = GYRE_DP_NAMES[dp]
         self._attr_name = f"{self._key.replace('_', ' ')} raw"
         self._attr_unique_id = f"{unique_base}_dp_{dp}"
+        if dp == 17:
+            self._attr_name = "Firmware version"
+        elif dp == 19:
+            self._attr_name = "Feeding pause duration"
+            self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
+            self._attr_device_class = SensorDeviceClass.DURATION
+        elif dp == 33:
+            self._attr_name = "Serial number"
+
+    @property
+    def report_missing(self) -> bool:
+        return self.native_value is None
 
     @property
     def native_value(self):
         value = self.coordinator.data.generic_attrs.get(self._key)
+        if self._dp == 17 and value is None:
+            return self.coordinator.config_entry.options.get("firmware_version") or None
+        if self._dp == 17 and isinstance(value, int):
+            digits = str(value)
+            return digits[:1] + "." + digits[1:] if len(digits) > 1 else digits + ".0"
+        if self._dp == 33 and isinstance(value, str):
+            try:
+                return bytes.fromhex(value).rstrip(b"\x00").decode("ascii")
+            except (ValueError, UnicodeDecodeError):
+                return None
         if isinstance(value, str) and len(value) > 255:
             return f"{len(value) // 2} bytes"
         return value
@@ -170,9 +193,52 @@ class MaxspectDatapointSensor(MaxspectEntity, SensorEntity):
     def extra_state_attributes(self):
         attrs = {"datapoint_id": self._dp, "datapoint_name": self._key}
         value = self.coordinator.data.generic_attrs.get(self._key)
+        if self._dp == 17:
+            attrs["source"] = "controller" if value is not None else "user-confirmed configuration"
         if self._dp >= 33 and isinstance(value, str):
             attrs["raw_hex"] = value
         return attrs
+
+def decode_feed_countdown(value: object) -> int | None:
+    """Decode Syna-G's three-byte hours/minutes/seconds countdown."""
+    if not isinstance(value, str):
+        return None
+    try:
+        data = bytes.fromhex(value)
+    except ValueError:
+        return None
+    if len(data) != 3 or data[1] > 59 or data[2] > 59:
+        return None
+    return data[0] * 3600 + data[1] * 60 + data[2]
+
+
+class MaxspectFeedRemainingSensor(MaxspectEntity, SensorEntity):
+    """Remaining feeding time reported by the controller."""
+
+    _attr_name = "Feeding time remaining"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_icon = "mdi:timer-sand"
+
+    def __init__(self, coordinator, unique_base: str) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{unique_base}_feed_remaining"
+
+    @property
+    def native_value(self) -> int | None:
+        # The controller retains the last countdown after resuming.
+        if self.coordinator.data.mode != 2:
+            return 0
+        return decode_feed_countdown(self.coordinator.data.generic_attrs.get("Countdown_Feed"))
+
+    @property
+    def extra_state_attributes(self):
+        seconds = self.native_value
+        return {
+            "remaining_hms": None if seconds is None else f"{seconds // 3600:02}:{seconds // 60 % 60:02}:{seconds % 60:02}",
+            "source": "Countdown_Feed (hours, minutes, seconds)",
+        }
+
 
 class MaxspectModeSensor(MaxspectEntity, SensorEntity):
     """Current operational mode — works for all device types."""
@@ -349,9 +415,10 @@ class MaxspectPowerSensor(MaxspectEntity, SensorEntity):
         }
 
 
-class MaxspectTimestampSensor(MaxspectEntity, SensorEntity):
+class MaxspectTimestampSensor(MaxspectReportedEntity, SensorEntity):
     """Device timestamp from state notify."""
 
+    _key = "Time"
     _attr_translation_key = "timestamp"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -365,9 +432,10 @@ class MaxspectTimestampSensor(MaxspectEntity, SensorEntity):
         return ts if ts else None
 
 
-class MaxspectFeedDurationSensor(MaxspectEntity, SensorEntity):
+class MaxspectFeedDurationSensor(MaxspectReportedEntity, SensorEntity):
     """Feed duration setting (DP 19, minutes)."""
 
+    _key = "Time_Feed"
     _attr_translation_key = "feed_duration"
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -405,9 +473,10 @@ class MaxspectModelSensor(MaxspectEntity, SensorEntity):
         return {0: "XF 330CE", 1: "XF 350CE"}.get(val)
 
 
-class MaxspectWashReminderSensor(MaxspectEntity, SensorEntity):
+class MaxspectWashReminderSensor(MaxspectReportedEntity, SensorEntity):
     """Wash reminder interval (DP 22, days)."""
 
+    _key = "Wash"
     _attr_translation_key = "wash_reminder"
     _attr_native_unit_of_measurement = UnitOfTime.DAYS
     _attr_entity_category = EntityCategory.DIAGNOSTIC

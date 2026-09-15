@@ -5,7 +5,7 @@ from homeassistant.const import EntityCategory
 
 from .const import DEVICE_TYPE_GYRE, GYRE_DP_NAMES
 from .coordinator import MaxspectCoordinator
-from .entity import MaxspectEntity
+from .entity import MaxspectReportedEntity
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -14,7 +14,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         async_add_entities(MaxspectDatapointBinarySensor(coordinator, dp) for dp in range(17))
 
 
-class MaxspectDatapointBinarySensor(MaxspectEntity, BinarySensorEntity):
+class MaxspectDatapointBinarySensor(MaxspectReportedEntity, BinarySensorEntity):
     """Expose a reported boolean without inventing values for absent fields."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC

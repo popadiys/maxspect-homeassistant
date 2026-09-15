@@ -114,3 +114,79 @@ async def test_large_binary_sensor_value_is_in_attributes(
     state = hass.states.get("sensor.maxspect_my_gyre_auto_raw")
     assert state.state == "781 bytes"
     assert state.attributes["raw_hex"] == "01" * 781
+
+@pytest.mark.parametrize(('raw', 'seconds'), [
+    ('000e37', 895), ('010203', 3723), ('000000', 0),
+    ('003c00', None), ('00003c', None), ('000e', None), ('zz', None), (None, None),
+])
+def test_countdown_matches_app_hours_minutes_seconds(raw, seconds):
+    from custom_components.maxspect.sensor import decode_feed_countdown
+    assert decode_feed_countdown(raw) == seconds
+
+
+async def test_missing_diagnostics_hide_and_reappear_with_error_report(
+    hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
+):
+    from homeassistant.helpers import entity_registry as er
+    await setup_integration(hass, gyre_config_entry)
+    coordinator = gyre_config_entry.runtime_data
+    registry = er.async_get(hass)
+    entity = 'binary_sensor.maxspect_my_gyre_pump_a_error'
+    assert registry.async_get(entity).hidden_by == er.RegistryEntryHider.INTEGRATION
+    assert registry.async_get(entity).disabled_by is None
+    coordinator.data.generic_attrs['Error_A'] = True
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+    assert registry.async_get(entity).hidden_by is None
+    assert hass.states.get(entity).state == 'on'
+    registry.async_update_entity(entity, hidden_by=er.RegistryEntryHider.USER)
+    coordinator.data.generic_attrs['Error_A'] = False
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+    assert registry.async_get(entity).hidden_by == er.RegistryEntryHider.USER
+    assert hass.states.get(entity).state == 'off'
+
+
+async def test_countdown_clears_after_feeding(
+    hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
+):
+    await setup_integration(hass, gyre_config_entry)
+    coordinator = gyre_config_entry.runtime_data
+    coordinator.data.mode = 2
+    coordinator.data.generic_attrs['Countdown_Feed'] = '000e37'
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+    entity = 'sensor.maxspect_my_gyre_feeding_time_remaining'
+    assert hass.states.get(entity).state == '895'
+    assert hass.states.get(entity).attributes['remaining_hms'] == '00:14:55'
+    coordinator.data.mode = 1
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+    assert hass.states.get(entity).state == '0'
+
+@pytest.mark.parametrize('channel', ['a', 'b'])
+async def test_connection_flag_is_inverted(
+    hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud, channel,
+):
+    await setup_integration(hass, gyre_config_entry)
+    coordinator = gyre_config_entry.runtime_data
+    for disconnected, expected in [(False, 'on'), (True, 'off')]:
+        coordinator.data.generic_attrs[f'State_{channel.upper()}'] = disconnected
+        coordinator.async_set_updated_data(coordinator.data)
+        await hass.async_block_till_done()
+        assert hass.states.get(f'binary_sensor.maxspect_my_gyre_pump_{channel}_connected').state == expected
+
+async def test_decoded_metadata_and_feeding_minutes(
+    hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
+):
+    from custom_components.maxspect.sensor import MaxspectDatapointSensor
+    await setup_integration(hass, gyre_config_entry)
+    coordinator = gyre_config_entry.runtime_data
+    coordinator.data.generic_attrs.update({
+        'Version_Firmware':36, 'Serial_Number':b'EXAMPLE00001\0'.hex(), 'Time_Feed':15,
+    })
+    assert MaxspectDatapointSensor(coordinator, 'test', 17).native_value == '3.6'
+    assert MaxspectDatapointSensor(coordinator, 'test', 33).native_value == 'EXAMPLE00001'
+    sensor = MaxspectDatapointSensor(coordinator, 'test', 19)
+    assert sensor.native_value == 15
+    assert sensor.native_unit_of_measurement == 'min'

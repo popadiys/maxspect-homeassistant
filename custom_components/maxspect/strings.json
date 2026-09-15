@@ -48,7 +48,9 @@
       "init": {
         "title": "Pump models",
         "description": "Select the model printed on each pump if automatic identification is incorrect. This only changes identification in Home Assistant.",
-        "data": {"model_a": "Pump A model", "model_b": "Pump B model", "local_control": "Prefer confirmed local control (cloud fallback)"}
+        "data": {"model_a": "Pump A model", "model_b": "Pump B model", "local_control": "Prefer confirmed local control (cloud fallback)"},
+        "device_mac": "Device MAC address (optional)",
+        "firmware_version": "App-confirmed firmware version (fallback only)"
       }
     }
   },

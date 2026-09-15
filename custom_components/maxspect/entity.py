@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceInfo, CONNECTION_NETWORK_MAC, format_mac
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -36,6 +38,38 @@ class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
             manufacturer="Maxspect",
             model=model,
         )
+        mac = options.get("device_mac")
+        if mac:
+            self._attr_device_info["connections"] = {(CONNECTION_NETWORK_MAC, format_mac(mac))}
+        if version := options.get("firmware_version"):
+            self._attr_device_info["sw_version"] = version
+
+
+class MaxspectReportedEntity(MaxspectEntity):
+    """Hide unreported diagnostics while keeping them enabled for future reports."""
+
+    @property
+    def report_missing(self) -> bool:
+        return self.coordinator.data.generic_attrs.get(self._key) is None
+
+    @callback
+    def _sync_visibility(self) -> None:
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        if entry is None or entry.hidden_by == er.RegistryEntryHider.USER:
+            return
+        hidden = er.RegistryEntryHider.INTEGRATION if self.report_missing else None
+        if entry.hidden_by != hidden:
+            registry.async_update_entity(self.entity_id, hidden_by=hidden)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._sync_visibility()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._sync_visibility()
+        super()._handle_coordinator_update()
 
 
 # ---------------------------------------------------------------------------

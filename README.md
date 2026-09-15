@@ -133,8 +133,24 @@ mode report and falls back to cloud control on failure.
 All 47 schema data points are exposed as read-only diagnostics: connection and
 error flags, firmware, settings, serial/time, manual and scheduled programs,
 feeding countdown, backup settings, current fields and reserved fields.
-Unreported values stay unknown. Long binary values show their byte count with
+Unreported values stay unknown and are hidden from the default UI until reported.
+They remain enabled; a later report automatically reveals the entity, unless
+you explicitly hid it yourself. Pump connection flags are inverted (0 means
+connected), and pump error flags use the problem device class (1 means error).
+Long binary values show their byte count with
 full data in `raw_hex`; undefined fields are intentionally left raw.
+
+**Feeding time remaining** decodes `Countdown_Feed` as three bytes: hours,
+minutes, seconds. It reports seconds with a readable `remaining_hms` attribute,
+and returns zero after leaving Feed mode so an old countdown is not displayed.
+`Time_Feed` is minutes. Firmware is formatted as in Syna-G (`36` → `3.6`), and
+serial-number bytes are ASCII. Optional MAC and app-confirmed firmware fields
+populate device information; the firmware fallback is labeled as user-confirmed
+and a received controller version takes precedence in the sensor.
+
+Controller modes are Water Flow/manual (0), Programming/schedule (1), Feed (2)
+and Off (3). Exit Feed (4) and On (5) are commands. Per-pump movement patterns
+are separate fields inside the Manual/Auto program blobs.
 
 The original channel power sensors remain enabled as **raw** electrical values.
 Their former watt unit was unverified. Maxspect specifies **5–52 W for XF350CE**,
