@@ -400,7 +400,7 @@ class MaxspectVoltageSensor(MaxspectEntity, SensorEntity):
 class MaxspectPowerSensor(MaxspectEntity, SensorEntity):
     """Unscaled electrical telemetry, retained until its unit is verified."""
 
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_category = None
 
     def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: int) -> None:
         super().__init__(coordinator)

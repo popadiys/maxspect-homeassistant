@@ -134,7 +134,9 @@ All 47 schema data points are exposed as read-only diagnostics: connection and
 error flags, firmware, settings, serial/time, manual and scheduled programs,
 feeding countdown, backup settings, current fields and reserved fields.
 Unreported values stay unknown and are hidden from the default UI until reported.
-They remain enabled; a later report automatically reveals the entity, unless
+Connection/error sensors remain visible even when unknown, and appear in the
+device Sensors section alongside the raw channel power sensors. Other hidden
+diagnostics remain enabled; a later report automatically reveals the entity, unless
 you explicitly hid it yourself. Pump connection flags are inverted (0 means
 connected), and pump error flags use the problem device class (1 means error).
 Long binary values show their byte count with

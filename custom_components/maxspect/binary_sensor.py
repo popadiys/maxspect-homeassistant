@@ -26,12 +26,20 @@ class MaxspectDatapointBinarySensor(MaxspectReportedEntity, BinarySensorEntity):
         base = coordinator.config_entry.unique_id or coordinator.client.host
         self._attr_unique_id = f"{base}_dp_{dp}"
         self._attr_name = self._key.replace("_", " ")
+        if dp in (3, 4, 5, 6):
+            self._attr_entity_category = None
         if dp in (3, 4):
             self._attr_name = f"Pump {'A' if dp == 3 else 'B'} connected"
             self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
         elif dp in (5, 6):
             self._attr_name = f"Pump {'A' if dp == 5 else 'B'} error"
             self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    @property
+    def report_missing(self) -> bool:
+        if self._dp in (3, 4, 5, 6):
+            return False
+        return super().report_missing
 
     @property
     def is_on(self):

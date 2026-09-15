@@ -124,23 +124,23 @@ def test_countdown_matches_app_hours_minutes_seconds(raw, seconds):
     assert decode_feed_countdown(raw) == seconds
 
 
-async def test_missing_diagnostics_hide_and_reappear_with_error_report(
+async def test_missing_diagnostics_hide_and_reappear_with_report(
     hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
 ):
     from homeassistant.helpers import entity_registry as er
     await setup_integration(hass, gyre_config_entry)
     coordinator = gyre_config_entry.runtime_data
     registry = er.async_get(hass)
-    entity = 'binary_sensor.maxspect_my_gyre_pump_a_error'
+    entity = 'binary_sensor.maxspect_my_gyre_bak1'
     assert registry.async_get(entity).hidden_by == er.RegistryEntryHider.INTEGRATION
     assert registry.async_get(entity).disabled_by is None
-    coordinator.data.generic_attrs['Error_A'] = True
+    coordinator.data.generic_attrs['Bak1'] = True
     coordinator.async_set_updated_data(coordinator.data)
     await hass.async_block_till_done()
     assert registry.async_get(entity).hidden_by is None
     assert hass.states.get(entity).state == 'on'
     registry.async_update_entity(entity, hidden_by=er.RegistryEntryHider.USER)
-    coordinator.data.generic_attrs['Error_A'] = False
+    coordinator.data.generic_attrs['Bak1'] = False
     coordinator.async_set_updated_data(coordinator.data)
     await hass.async_block_till_done()
     assert registry.async_get(entity).hidden_by == er.RegistryEntryHider.USER

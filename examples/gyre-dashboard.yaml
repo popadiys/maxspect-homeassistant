@@ -81,7 +81,7 @@ views:
 
       '
   - type: entities
-    title: Pump status
+    title: Sensors
     entities:
     - binary_sensor.maxspect_pumps_pump_a_connected
     - binary_sensor.maxspect_pumps_pump_b_connected
@@ -89,3 +89,7 @@ views:
     - binary_sensor.maxspect_pumps_pump_b_error
     - sensor.maxspect_pumps_channel_1_rpm
     - sensor.maxspect_pumps_channel_2_rpm
+    - entity: sensor.maxspect_pumps_channel_1_power
+      name: Channel 1 power (raw)
+    - entity: sensor.maxspect_pumps_channel_2_power
+      name: Channel 2 power (raw)
