@@ -36,6 +36,7 @@ from .const import (
     GYRE_DP_NAMES,
 )
 from .coordinator import MaxspectCoordinator
+from .gyre_program import decode_serial_number
 from .entity import ICV6Entity, MaxspectEntity, MaxspectReportedEntity
 from .icv6_api import ICV6_MODE_NAMES, ICV6_DEVICE_TYPES, compute_current_levels
 from .icv6_coordinator import ICV6Coordinator
@@ -187,10 +188,7 @@ class MaxspectDatapointSensor(MaxspectReportedEntity, SensorEntity):
             digits = str(value)
             return digits[:1] + "." + digits[1:] if len(digits) > 1 else digits + ".0"
         if self._dp == 33 and isinstance(value, str):
-            try:
-                return bytes.fromhex(value).rstrip(b"\x00").decode("ascii")
-            except (ValueError, UnicodeDecodeError):
-                return None
+            return decode_serial_number(value)
         if isinstance(value, str) and len(value) > 255:
             return f"{len(value) // 2} bytes"
         return value

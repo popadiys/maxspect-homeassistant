@@ -68,3 +68,14 @@ def active_entry(entries: list[dict], minute: int) -> dict | None:
         return None
     entries = sorted(entries, key=lambda entry: entry["minute"])
     return next((entry for entry in reversed(entries) if entry["minute"] <= minute), entries[-1])
+
+
+def decode_serial_number(value: object) -> str | None:
+    """Decode a nonempty printable ASCII serial from the reported bytes."""
+    if not isinstance(value, str):
+        return None
+    try:
+        serial = bytes.fromhex(value).rstrip(b"\x00").decode("ascii")
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return serial if serial and serial.isprintable() else None

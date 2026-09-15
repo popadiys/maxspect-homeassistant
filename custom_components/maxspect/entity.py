@@ -14,6 +14,7 @@ from .const import (
     PRODUCT_KEY_TO_MODEL_NAME,
 )
 from .coordinator import MaxspectCoordinator
+from .gyre_program import decode_serial_number
 
 
 class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
@@ -38,6 +39,9 @@ class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
             manufacturer="Maxspect",
             model=model,
         )
+        serial = decode_serial_number(coordinator.client.state.generic_attrs.get("Serial_Number"))
+        if serial:
+            self._attr_device_info["serial_number"] = serial
         mac = options.get("device_mac")
         if mac:
             self._attr_device_info["connections"] = {(CONNECTION_NETWORK_MAC, format_mac(mac))}

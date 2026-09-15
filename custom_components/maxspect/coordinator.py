@@ -12,8 +12,9 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
-from .gyre_program import decode_program, active_entry
+from .gyre_program import decode_program, active_entry, decode_serial_number
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -284,6 +285,16 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 continue
             if key == "Time_Feed" and (not isinstance(value, int) or not 5 <= value <= 120):
                 continue
+            if key == "Serial_Number":
+                serial = decode_serial_number(value)
+                if serial is None:
+                    continue
+                registry = dr.async_get(self.hass)
+                device = registry.async_get_device(identifiers={
+                    (DOMAIN, self.config_entry.unique_id or self.client.host),
+                })
+                if device is not None and device.serial_number != serial:
+                    registry.async_update_device(device.id, serial_number=serial)
             self.saved_settings[key] = value
             if fresh:
                 self.settings_received[key] = dt_util.utcnow().isoformat()
