@@ -30,7 +30,7 @@ views:
       name: Error status
     - entity: sensor.maxspect_pumps_channel_1_rpm
       name: Motor speed
-    - entity: sensor.maxspect_pumps_channel_1_power
+    - entity: sensor.maxspect_pumps_channel_1_power_raw
       name: Power reading (raw)
     - type: section
       label: Pump B
